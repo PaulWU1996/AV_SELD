@@ -250,6 +250,20 @@ def preprocessing_task2(args):
                                         window=args.stft_window,
                                         output_phase=args.output_phase)
 
+                # stft = (8, 256, 2400): (chn, freq, time)
+
+
+                ## We add the new feats and disable them for now
+
+                #compute mel spectrogram
+                log_mel = uf.get_mel_spectrogram(stft, sr, args.stft_nperseg, args.n_mels)
+
+                #compute intensity vectors
+                intensity_vectors = uf.get_intensity(log_mel)
+
+                # audio features
+                audio_feat = np.concatenate((log_mel, intensity_vectors))
+
                 #compute matrix label
                 label = uf.csv_to_matrix_task2(target_path, sound_classes_dict_task2,
                                                dur=int(file_size), step=args.frame_len/1000., max_loc_value=max_label_value,
@@ -271,7 +285,7 @@ def preprocessing_task2(args):
                     # if args.audio_visual:
                     #     image_predictors.append(image)
                     predictors_path.append(sound[:-6])
-                    predictors.append(stft)
+                    predictors.append(audio_feat)
                     target.append(label)
 
                 count += 1
@@ -325,14 +339,14 @@ def preprocessing_task2(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     #i/o
-    mnt_path = '/mnt/media/christian/Datasets/'
+    mnt_path = '/mnt/fast/nobackup/scratch4weeks/pw00391/Task2'
     parser.add_argument('--task', type=int,
                         help='task to be pre-processed')
     parser.add_argument('--audio_visual', type=bool, default=True,
                         help='whether to consider images or not (audio-visual track or audio-only track)')
-    parser.add_argument('--input_path', type=str, default=mnt_path+'DATASETS/Task1',
+    parser.add_argument('--input_path', type=str, default=mnt_path+'Task2',
                         help='directory where the dataset has been downloaded')
-    parser.add_argument('--output_path', type=str, default=mnt_path+'DATASETS/processed',
+    parser.add_argument('--output_path', type=str, default=mnt_path+'/Output/processed',
                         help='where to save the numpy matrices')
     #processing type
     parser.add_argument('--train_val_split', type=float, default=0.7,
@@ -358,6 +372,8 @@ if __name__ == '__main__':
                         help='num of stft frames')
     parser.add_argument('--stft_noverlap', type=int, default=112,
                         help='num of overlapping samples for stft')
+    parser.add_argument('--n_mels', type=int, default=128, 
+                        help='number of mel bins')
     parser.add_argument('--stft_window', type=str, default='hamming',
                         help='stft window_type')
     parser.add_argument('--output_phase', type=str, default='False',
@@ -386,3 +402,5 @@ if __name__ == '__main__':
         preprocessing_task1(args)
     elif args.task == 2:
         preprocessing_task2(args)
+
+

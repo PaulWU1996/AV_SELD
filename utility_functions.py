@@ -90,29 +90,56 @@ def spectrum_fast(x, nperseg=512, noverlap=128, window='hamming', cut_dc=True,
     #return np.rot90(np.abs(seg_stft))
     return output
 
+def get_mel_spectrogram(linear_spectra, sr, n_fft, n_mels):
+    mel_wts = librosa.filters.mel(sr=sr, n_fft=n_fft, n_mels=n_mels)[:, :-1]
+    mel_feat = np.zeros((linear_spectra.shape[0], n_mels, linear_spectra.shape[-1])) # (channel, mel_bin, time_step)
+    for channel in range(linear_spectra.shape[0]):
+        mag_spectra = np.abs(linear_spectra[channel,:,:])**2
+        mel_spectra = np.dot(mel_wts, mag_spectra)
+        log_mel_spectra = librosa.power_to_db(mel_spectra)
+        mel_feat[channel,:,:] = log_mel_spectra
+       
+    return mel_feat # (8, 128, 2400)
 
-def gen_submission_list_task2(sed, doa, max_loc_value=360.,num_frames=600, num_classes=14, max_overlaps=3):
+def get_intensity(log_mel):
+    channels, n_bins, num_frames = log_mel.shape[0], log_mel.shape[1], log_mel.shape[2]
+    intensity = [] # np.zeros((channels, n_bins, num_frames))
+    for i in range(channels):
+        frame = log_mel[i]
+        intensity_vectors = np.zeros((num_frames, n_bins))
+        for t in range(num_frames):
+            for f in range(n_bins):
+                intensity_vectors[t,f] = np.sum(np.exp(frame[f, t]))
+        intensity_vectors /= np.max(intensity_vectors)
+        intensity.append(intensity_vectors)
+    intensity = np.array(intensity)
+    return intensity.transpose((0,2,1))
+
+def gen_submission_list_task2(sed, doa, max_loc_value=360.,num_frames=300, num_classes=14, max_overlaps=3):
     '''
     Process sed and doa output matrices (model's output) and generate a list of active sounds
     and their location for every frame. The list has the correct format for the Challenge results
     submission.
     '''
     output = []
-    for i, (c, l) in enumerate(zip(sed, doa)):  #iterate all time frames
-        c = np.round(c)  #turn to 0/1 the class predictions with threshold 0.5
-        l = l * max_loc_value  #turn back locations between -2,2 as in the original dataset
-        l = l.reshape(num_classes, max_overlaps, 3)  #num_class, event number, coordinates
-        if np.sum(c) == 0:  #if no sounds are detected in a frame
-            pass            #don't append
-        else:
-            for j, e in enumerate(c):  #iterate all events
-                if e != 0:  #if an avent is predicted
-                    #append list to output: [time_frame, sound_class, x, y, z]
-                    predicted_class = int(j/max_overlaps)
-                    num_event = int(j%max_overlaps)
-                    curr_list = [i, predicted_class, l[predicted_class][num_event][0], l[predicted_class][num_event][1], l[predicted_class][num_event][2]]
 
-                    output.append(curr_list)
+
+    for i, (c, l) in enumerate(zip(sed, doa)):  #iterate all time frames
+            c = np.round(c)  #turn to 0/1 the class predictions with threshold 0.5
+            l = l * max_loc_value  #turn back locations between -2,2 as in the original dataset
+            l = l.reshape(num_classes, max_overlaps, 3)  #num_class, event number, coordinates
+            
+            if np.sum(c.numpy()) == 0:  #if no sounds are detected in a frame
+                pass            #don't append
+            else:
+                for j, e in enumerate(c):  #iterate all events
+                    if e != 0:  #if an avent is predicted
+                        #append list to output: [time_frame, sound_class, x, y, z]
+                        predicted_class = int(j/max_overlaps)
+                        num_event = int(j%max_overlaps)
+                        curr_list = [i, predicted_class, l[predicted_class][num_event][0], l[predicted_class][num_event][1], l[predicted_class][num_event][2]]
+
+                        output.append(curr_list)
 
     return np.array(output)
 

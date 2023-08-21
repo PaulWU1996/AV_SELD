@@ -1,8 +1,19 @@
 import os
+import numpy as np
 import torch
 import torch.utils.data as utils
 
 from utility_functions import audio_image_csv_to_dict, load_image
+
+# import torchvision.transforms as transforms
+
+# # 定义一些常用的图像转换操作
+# transform = transforms.Compose([
+#     transforms.Resize((224, 224)),     # 重新调整图像大小为 (224, 224)
+#     # transforms.RandomHorizontalFlip(),  # 随机水平翻转
+#     transforms.ToTensor(),              # 转换为张量
+#     transforms.Normalize((0.485, 0.456, 0.406), (0.229, 0.224, 0.225))  # 标准化
+# ])
 
 class CustomAudioVisualDataset(utils.Dataset):
     def __init__(self, audio_predictors, audio_target, image_path=None, image_audio_csv_path=None, transform_image=None):
@@ -35,10 +46,9 @@ class CustomAudioVisualDataset(utils.Dataset):
             if self.transform:
                 img = self.transform(img)
 
-            return (audio_pred, img), audio_trg
+            return (audio_pred.astype(np.float32), img.to(torch.float32)), audio_trg.astype(np.float32)
         
-        return audio_pred, audio_trg
-
+        return audio_pred.astype(np.float32), audio_trg.astype(np.float32)
     
 # class CustomBatch:
 #     def __init__(self, data):
@@ -56,3 +66,75 @@ class CustomAudioVisualDataset(utils.Dataset):
 
 # def collate_wrapper(batch):
 #     return CustomBatch(batch)
+
+
+def convert(predictors, targets, chunk_length=1):
+    r"""
+    Input:
+        predictors: (list) [audio_predictors, audio_predictors_path]
+        targets: (list) [audio_target]
+        chunk_length: (int) length of chunk in seconds (default: 1)
+    Output:
+        out_predictors: (list) [audio_predictors, audio_predictors_path]
+        out_targets: (list) [audio_target]
+    """
+
+    out_predictors = []
+    out_features = []
+    out_files = []
+    out_targets = []
+
+    label_frame_in_chunk = chunk_length * 10
+    feat_frame_in_chunk = label_frame_in_chunk * 8
+
+    nfile = len(predictors[0])
+    for fn in range(nfile):
+        feature = predictors[0][fn]
+        feature = np.concatenate((feature[:,:128,:],feature[:,128:,:]), axis=0)
+
+        file_name = predictors[1][fn]
+        target = targets[fn]
+        all_steps = feature.shape[2]
+
+        chunk_step = all_steps // (8*chunk_length*10)
+        
+        for i in range(chunk_step):
+            out_features.append(feature[:,:,i*feat_frame_in_chunk:(i+1)*feat_frame_in_chunk])
+            out_files.append(file_name)
+
+            out_targets.append(target[i*label_frame_in_chunk:(i+1)*label_frame_in_chunk])
+            
+    out_predictors = [out_features, out_files]
+
+    return out_predictors, out_targets
+
+
+# import pickle
+# from torchvision import transforms
+
+# with open('/mnt/fast/nobackup/scratch4weeks/pw00391/Task2/processed/task2_predictors_train.pkl', 'rb') as f:
+#     audio_predictors = pickle.load(f)
+
+# with open('/mnt/fast/nobackup/scratch4weeks/pw00391/Task2/processed/task2_target_train.pkl', 'rb') as f:
+#     audio_target = pickle.load(f)
+
+
+# predictors, targets = convert(audio_predictors, audio_target)
+
+# transform = transforms.Compose([
+#         transforms.Resize((224, 224)),     # 重新调整图像大小为 (224, 224)
+#         transforms.ToTensor(),
+#     ])
+
+# train_set = CustomAudioVisualDataset(audio_predictors=predictors, 
+#                 audio_target=targets, 
+#                 image_path='/mnt/fast/nobackup/scratch4weeks/pw00391/Task2/L3DAS23_Task2_images', 
+#                 image_audio_csv_path='Task2/L3DAS23_Task2_train/audio_image.csv', 
+#                 transform_image=transform)
+
+
+
+# print("Train set length: ", len(train_set))
+# (audio,img), target = train_set.__getitem__(3)
+# print('done')
+
