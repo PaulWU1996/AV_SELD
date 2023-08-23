@@ -256,13 +256,13 @@ def preprocessing_task2(args):
                 ## We add the new feats and disable them for now
 
                 #compute mel spectrogram
-                log_mel = uf.get_mel_spectrogram(stft, sr, args.stft_nperseg, args.n_mels)
+                # log_mel = uf.get_mel_spectrogram(stft, sr, args.stft_nperseg, args.n_mels)
 
                 #compute intensity vectors
-                intensity_vectors = uf.get_intensity(log_mel)
+                # intensity_vectors = uf.get_intensity(log_mel)
 
                 # audio features
-                audio_feat = np.concatenate((log_mel, intensity_vectors))
+                # audio_feat = np.concatenate((log_mel, intensity_vectors))
 
                 #compute matrix label
                 label = uf.csv_to_matrix_task2(target_path, sound_classes_dict_task2,
@@ -285,7 +285,7 @@ def preprocessing_task2(args):
                     # if args.audio_visual:
                     #     image_predictors.append(image)
                     predictors_path.append(sound[:-6])
-                    predictors.append(audio_feat)
+                    predictors.append(stft) #audio_feat
                     target.append(label)
 
                 count += 1
@@ -339,7 +339,7 @@ def preprocessing_task2(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     #i/o
-    mnt_path = '/mnt/fast/nobackup/scratch4weeks/pw00391/Task2'
+    mnt_path = '/mnt/fast/nobackup/scratch4weeks/pw00391/'
     parser.add_argument('--task', type=int,
                         help='task to be pre-processed')
     parser.add_argument('--audio_visual', type=bool, default=True,

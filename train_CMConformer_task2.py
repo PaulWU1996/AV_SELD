@@ -17,6 +17,7 @@ from pytorch_lightning.loggers import WandbLogger
 
 
 import pickle
+import argparse
 
 import warnings
 warnings.filterwarnings("ignore")
@@ -82,51 +83,51 @@ class AudioVisualDatasetModule(pl.LightningDataModule):
     def test_dataloader(self):
         return torch.utils.data.DataLoader(self.test_set, batch_size=self.batch_size, shuffle=False, num_workers=4)
 
-def create_data(batch_size=2,):
+def create_data(args):
 
     print("Creating dataset module")
 
     # Load the pickle data
     audio_preditctors = []
     audio_targets = []
-    csv = ['/mnt/fast/nobackup/scratch4weeks/pw00391/Task2/L3DAS23_Task2_train/audio_image.csv','/mnt/fast/nobackup/scratch4weeks/pw00391/Task2/L3DAS23_Task2_dev/audio_image.csv']
+    csv = [args.path_csv_images_train, args.path_csv_images_test]
 
     # Train set
-    with open('/mnt/fast/nobackup/scratch4weeks/pw00391/Task2/processed/task2_predictors_train.pkl', 'rb') as f:
+    with open(args.training_predictors_path, 'rb') as f:
         audio_predictor = pickle.load(f)
         # audio_preditctors.append(audio_predictor)
         print("Loaded audio predictors for train set")
-    with open('/mnt/fast/nobackup/scratch4weeks/pw00391/Task2/processed/task2_target_train.pkl', 'rb') as f:
+    with open(args.training_target_path, 'rb') as f:
         audio_target = pickle.load(f)
         # audio_targets.append(audio_target)
         print("Loaded audio targets for train set")
-    predictor, target = convert(audio_predictor, audio_target)
+    predictor, target = convert(audio_predictor, audio_target, chunk_length=args.chunk_lengths)
     audio_preditctors.append(predictor)
     audio_targets.append(target)
 
     # Val set
-    with open('/mnt/fast/nobackup/scratch4weeks/pw00391/Task2/processed/task2_predictors_validation.pkl', 'rb') as f:
+    with open(args.validation_predictors_path, 'rb') as f:
         audio_predictor = pickle.load(f)
         # audio_preditctors.append(audio_predictor)
         print("Loaded audio predictors for val set")
-    with open('/mnt/fast/nobackup/scratch4weeks/pw00391/Task2/processed/task2_target_validation.pkl', 'rb') as f:
+    with open(args.validation_target_path, 'rb') as f:
         audio_target = pickle.load(f)
         # audio_targets.append(audio_target)
         print("Loaded audio targets for val set")
-    predictor, target = convert(audio_predictor, audio_target)
+    predictor, target = convert(audio_predictor, audio_target, chunk_length=args.chunk_lengths)
     audio_preditctors.append(predictor)
     audio_targets.append(target)
 
     # Test set
-    with open('/mnt/fast/nobackup/scratch4weeks/pw00391/Task2/processed/task2_predictors_test.pkl', 'rb') as f:
+    with open(args.test_predictors_path, 'rb') as f:
         audio_predictor = pickle.load(f)
         # audio_preditctors.append(audio_predictor)
         print("Loaded audio predictors for test set")
-    with open('/mnt/fast/nobackup/scratch4weeks/pw00391/Task2/processed/task2_target_test.pkl', 'rb') as f:
+    with open(args.test_target_path, 'rb') as f:
         audio_target = pickle.load(f)
         # audio_targets.append(audio_target)
         print("Loaded audio targets for test set")
-    predictor, target = convert(audio_predictor, audio_target)
+    predictor, target = convert(audio_predictor, audio_target, chunk_length=args.chunk_lengths)
     audio_preditctors.append(predictor)
     audio_targets.append(target)
 
@@ -136,10 +137,10 @@ def create_data(batch_size=2,):
     ])
     # Create the dataset module
     dataset_module = AudioVisualDatasetModule(audio_predictors=audio_preditctors, audio_target=audio_targets, 
-                            image_path='/mnt/fast/nobackup/scratch4weeks/pw00391/Task2/L3DAS23_Task2_images', 
+                            image_path=args.path_images, 
                             image_audio_csv_path=csv, 
                             transform_image=transform,
-                            batch_size=batch_size,)
+                            batch_size=args.batch_size,)
 
     print("Created dataset module")
     return dataset_module
@@ -163,7 +164,7 @@ def seld_loss(sed, doa, target, criterion_sed, criterion_doa, output_classes=14,
     loss_sed = criterion_sed(sed, target_sed)
     loss_doa = criterion_doa(doa, target_doa)
 
-    return (loss_sed + loss_doa)
+    return loss_sed #(loss_sed + loss_doa)
 
 
 def evaluation(sed, doa, target, output_classes=14, class_overlaps=3):
@@ -186,10 +187,13 @@ def evaluation(sed, doa, target, output_classes=14, class_overlaps=3):
     for i in range(sed.shape[0]):
         sed_ = sed[i,:,:]
         doa_ = doa[i,:,:]
+
+
         sed_target = target_sed[i,:,:]
         doa_target = target_doa[i,:,:]
 
-        tp, fp, fn, = compute_metrics(sed_, doa_, sed_target, doa_target, output_classes=14, class_overlaps=3)
+        # tp, fp, fn, = compute_metrics(sed_, doa_, sed_target, doa_target, output_classes=14, class_overlaps=3)
+        tp, fp, fn, = compute_metrics(sed_, doa_target, sed_target, doa_target, output_classes=14, class_overlaps=3)
 
         TP += tp
         FP += fp
@@ -200,6 +204,7 @@ def evaluation(sed, doa, target, output_classes=14, class_overlaps=3):
 
 def compute_metrics(sed, doa, sed_target, doa_target, output_classes=14, class_overlaps=3):
 
+    # prediction = gen_submission_list_task2(sed, doa, max_overlaps=class_overlaps, max_loc_value=360)
     prediction = gen_submission_list_task2(sed, doa, max_overlaps=class_overlaps, max_loc_value=360)
 
     truth = gen_submission_list_task2(sed_target, doa_target, max_overlaps=class_overlaps, max_loc_value=360)
@@ -220,14 +225,15 @@ def compute_f_score(TP, FP, FN, epsilon=sys.float_info.epsilon):
 
 
 class Model(pl.LightningModule):
-    def __init__(self, input_channels=16, n_bins=128, num_classes=14, num_resblks=4, num_confblks=2, hidden_dim=512, kernel_size=3, num_heads=4, dropout=0.1, output_classes=14, class_overlaps=3,
-                    lr=0.05, warmup_epochs=10,
-                    #lr=1e-4, weight_decay=1e-6, max_epochs=100, batch_size=16, num_workers=4, gpus=1, precision=16, amp_level='O1', deterministic=True, seed=42
-                    ):
+    def __init__(self,
+                res_in = [8, 64, 128, 256], res_out = [64, 128, 256, 512], 
+                n_bins=256, num_resblks=4, num_confblks=2, hidden_dim=512, kernel_size=3, num_heads=4, dropout=0.1,
+                output_classes=14, class_overlaps=3,
+                lr=0.00005, warmup_epochs=10,):
         super().__init__()
         
-        self.model = AV_SELD(input_channels=input_channels, n_bins=n_bins, num_classes=num_classes, num_resblks=num_resblks, num_confblks=num_confblks, hidden_dim=hidden_dim, kernel_size=kernel_size, num_heads=num_heads, dropout=dropout, output_classes=output_classes, class_overlaps=class_overlaps)
-        # self.model = Test_demo(input_channels=input_channels, n_bins=n_bins, num_classes=num_classes, num_resblks=num_resblks, num_confblks=num_confblks, hidden_dim=hidden_dim, kernel_size=kernel_size, num_heads=num_heads, dropout=dropout, output_classes=output_classes, class_overlaps=class_overlaps)
+        # self.model = AV_SELD(input_channels=input_channels, n_bins=n_bins, num_classes=num_classes, num_resblks=num_resblks, num_confblks=num_confblks, hidden_dim=hidden_dim, kernel_size=kernel_size, num_heads=num_heads, dropout=dropout, output_classes=output_classes, class_overlaps=class_overlaps)
+        self.model = Test_demo(input_channels=input_channels, n_bins=n_bins, num_classes=num_classes, num_resblks=num_resblks, num_confblks=num_confblks, hidden_dim=hidden_dim, kernel_size=kernel_size, num_heads=num_heads, dropout=dropout, output_classes=output_classes, class_overlaps=class_overlaps)
         
 
         self.criterion_sed = nn.BCELoss()
@@ -253,48 +259,34 @@ class Model(pl.LightningModule):
 
 
     def forward(self, audio, img):
-        sed, doa = self.model(audio, img)
-        return sed, doa
+        # sed, doa = self.model(audio, img)
+        sed = self.model(audio)
+        return sed#, doa
 
     def training_step(self, batch, batch_idx):
         (audio, img), target = batch
         sed, doa = self.model(audio, img)
-        train_loss = seld_loss(sed, doa, target, self.criterion_sed, self.criterion_doa, output_classes=14, class_overlaps=3)
-        # tp, fp, fn = compute_metrics(sed, doa, target, output_classes=14, class_overlaps=3)
-        
 
-        # # record into result dict
-        # self.train_['loss'].append(train_loss)
-        # self.train_['TP'].append(tp)
-        # self.train_['FP'].append(fp)
-        # self.train_['FN'].append(fn)
+        # train_loss = seld_loss(sed, doa, target, self.criterion_sed, self.criterion_doa, output_classes=14, class_overlaps=3)
+
+        train_loss = seld_loss(sed, torch.zeros((sed.shape[0],10,126), device=sed.device), target, self.criterion_sed, self.criterion_doa, output_classes=14, class_overlaps=3)
 
         self.log('train_loss', train_loss, on_step=True, on_epoch=False, prog_bar=True, logger=True)
         return {'loss': train_loss}
-
-    # def training_epoch_end(self):
-
-    #     # compute one epoch's metrics
-    #     TP = sum(self.train_['TP'])
-    #     FP = sum(self.train_['FP'])
-    #     FN = sum(self.train_['FN'])
-    #     # compute one epoch's F score
-    #     precision, recall, F_score = compute_f_score(TP, FP, FN)
-
-    #     # record into 
-    #     self.log('train_f_score', F_score, logger=True)
-    #     self.log('train_precision', precision, logger=True)
-    #     self.log('train_recall', recall, logger=True)
-
-    #     # free the memory
-    #     self.train_.clear()
 
 
     def validation_step(self, batch, batch_idx):
         (audio, img), target = batch
         sed, doa = self.model(audio, img)
-        val_loss = seld_loss(sed, doa, target, self.criterion_sed, self.criterion_doa, output_classes=14, class_overlaps=3)
-        tp, fp, fn = evaluation(sed.cpu(), doa.cpu(), target.cpu(), output_classes=14, class_overlaps=3)
+        # val_loss = seld_loss(sed, doa, target, self.criterion_sed, self.criterion_doa, output_classes=14, class_overlaps=3)
+
+        sed = self.model(audio)
+        val_loss = seld_loss(sed, torch.zeros((sed.shape[0],10,126),device=sed.device), target, self.criterion_sed, self.criterion_doa, output_classes=14, class_overlaps=3)
+
+
+
+        # tp, fp, fn = evaluation(sed.cpu(), doa.cpu(), target.cpu(), output_classes=14, class_overlaps=3)
+        tp, fp, fn = evaluation(sed.cpu(), torch.zeros((sed.shape[0],10,126), device='cpu'), target.cpu(), output_classes=14, class_overlaps=3)
 
         # record into result dict
         # self.val_['loss'].append(val_loss)
@@ -369,7 +361,7 @@ class Model(pl.LightningModule):
 
 
     def configure_optimizers(self):
-        optimizer = torch.optim.Adam(self.model.parameters(), lr=self.lr, betas=(0.9, 0.999), eps=1e-08, weight_decay=0, amsgrad=True) #, weight_decay=1e-6) ref to train_baseline_task2.py
+        optimizer = torch.optim.Adam(self.model.parameters(), lr=self.lr, betas=(0.9, 0.999), eps=1e-08, weight_decay=0.1, amsgrad=True) #, weight_decay=1e-6) ref to train_baseline_task2.py
         
         # lr_lambda = lambda epoch: self.lr * np.minimum(
         #     (epoch + 1) ** -0.5, (epoch + 1) * (self.num_epochs_warmup ** -1.5)
@@ -378,45 +370,112 @@ class Model(pl.LightningModule):
         return [optimizer]#, [scheduler]
 
 
+def main(args):
+    
+    torch.set_default_dtype(torch.float32)
+    torch.set_float32_matmul_precision("medium")
 
-### MAIN ###
-
-# data_module = create_data(batch_size=16,)
-# data_module.setup()
-
-# (audio,img), target = data_module.train_set.__getitem__(0)
-# print(audio.shape)
-# print(img.shape)
-# print(target.shape)
-
-torch.set_default_dtype(torch.float32)
-torch.set_float32_matmul_precision("medium")
-
-wandb_logger = WandbLogger(project='CMConformer', 
+    # set wandb logger
+    wandb_logger = WandbLogger(project='CMConformer', 
                             entity='', 
                             log_model=True, 
-                            save_dir='/mnt/fast/nobackup/scratch4weeks/pw00391/wandb_log')
+                            save_dir=args.log_path)
+    
+    seed_everything(10, workers=True)
+    data_module = create_data(args)
+
+    model = Model(res_in=args.res_in, res_out=args.res_out, n_bins=args.n_bins, num_resblks=args.num_resblks, num_confblks=args.num_confblks, hidden_dim=args.hidden_dim, kernel_size=args.kernel_size, num_heads=args.num_heads, dropout=args.dropout, output_classes=args.output_classes, class_overlaps=args.class_overlaps, lr=args.lr, warmup_epochs=args.warmup_epochs, audio_visual=args.audio_visual, chunk_lengths=args.chunk_lengths)
+
+    EarlyStopping = EarlyStopping(monitor='val_f_score', patience=args.patience, mode='max')
+    checkpoint_callback = ModelCheckpoint(dirpath=args.ckpt_path, filename='{epoch}-{val_loss:.2f}-{val_f_score:.2f}')
+
+    trainer = Trainer(fast_dev_run=False,  
+                    min_epochs=args.min_epochs, 
+                    max_epochs=args.max_epochs,
+                    accelerator='auto',  
+                    deterministic=True,
+                    enable_checkpointing=True, 
+                    callbacks=[EarlyStopping, checkpoint_callback], 
+                    logger=wandb_logger
+                    )
+
+    trainer.fit(model, data_module)
+    # trainer.test(model, data_module.test_dataloader())
 
 
-seed_everything(10, workers=True)
+if __name__ == '__main__':
+    parser = argparse.ArgumentParser()
 
-data_module = create_data(batch_size=64)
-model = Model(lr=0.00001)
-# model = Model.load_from_checkpoint(checkpoint_path='/mnt/fast/nobackup/scratch4weeks/pw00391/ckpt/epoch=49-val_loss=0.12-val_f_score=0.00.ckpt', lr=0.00001, map_location=torch.device('cpu'))
+    # saving/loading
+    parser.add_argument('--ckpt_path', type=str, default='/mnt/fast/nobackup/scratch4weeks/pw00391/ckpt',
+                        help='path to save the checkpoint')
+    parser.add_argument('--ckpt_name', type=str, default=None,
+                        help='name of the checkpoint to load')
+    parser.add_argument('--log_path', type=str, default='/mnt/fast/nobackup/scratch4weeks/pw00391/wandb_log',
+                        help='path to save the log')
+    parser.add_argument('--path_images', type=str, default='/mnt/fast/nobackup/scratch4weeks/pw00391/Task2/L3DAS23_Task2_images',
+                        help="Path to the folder containing all images of Task2. None when using the audio-only version")    
+    parser.add_argument('--path_csv_images_train', type=str, default='/mnt/fast/nobackup/scratch4weeks/pw00391/Task2/L3DAS23_Task2_train/audio_image.csv',
+                        help="Path to the CSV file for the couples (name_audio, name_photo) in the train/val set")
+    parser.add_argument('--path_csv_images_test', type=str, default='/mnt/fast/nobackup/scratch4weeks/pw00391/Task2/L3DAS23_Task2_dev/audio_image.csv',
+                        help="Path to the CSV file for the couples (name_audio, name_photo) in the test set")
+    
+    # dataset parameters
+    parser.add_argument('--training_predictors_path', type=str, default='/mnt/fast/nobackup/scratch4weeks/pw00391/Output/processed/task2_predictors_train.pkl')
+    parser.add_argument('--training_target_path', type=str, default='/mnt/fast/nobackup/scratch4weeks/pw00391/Output/processed/task2_target_train.pkl')
+    parser.add_argument('--validation_predictors_path', type=str, default='/mnt/fast/nobackup/scratch4weeks/pw00391/Output/processed/task2_predictors_validation.pkl')
+    parser.add_argument('--validation_target_path', type=str, default='/mnt/fast/nobackup/scratch4weeks/pw00391/Output/processed/task2_target_validation.pkl')
+    parser.add_argument('--test_predictors_path', type=str, default='/mnt/fast/nobackup/scratch4weeks/pw00391/Output/processed/task2_predictors_test.pkl')
+    parser.add_argument('--test_target_path', type=str, default='/mnt/fast/nobackup/scratch4weeks/pw00391/Output/processed/task2_target_test.pkl')
 
-EarlyStopping = EarlyStopping(monitor='val_f_score', patience=10, mode='max')
-checkpoint_callback = ModelCheckpoint(dirpath='/mnt/fast/nobackup/scratch4weeks/pw00391/ckpt', filename='{epoch}-{val_loss:.2f}-{val_f_score:.2f}')
+    # training parameters
+    parser.add_argument('--batch_size', type=int, default=16)
+    parser.add_argument('--lr', type=float, default=0.00001)
+    parser.add_argument('--warmup_epochs', type=int, default=10)
+    parser.add_argument('--min_epochs', type=int, default=50)
+    parser.add_argument('--max_epochs', type=int, default=100)
+    parser.add_argument('--num_workers', type=int, default=4)
+    parser.add_argument('--patience', type=int, default=5)
 
-trainer = Trainer(fast_dev_run=False,  
-                  min_epochs=50, 
-                  max_epochs=400,
-                  accelerator='auto',  
-                  deterministic=True,
-                  enable_checkpointing=True, 
-                  callbacks=[EarlyStopping, checkpoint_callback], 
-                  logger=wandb_logger
-                  )
+    # model parameters
+    parser.add_argument('--res_in',type=list, default=[4, 64, 128, 256],
+                        help="Number of input channels for each residual block")
+    parser.add_argument('--res_out',type=list, default=[64, 128, 256, 512],
+                        help="Number of output channels for each residual block")
+    parser.add_argument('--n_bins', type=int, default=256,
+                        help="Number of frequency bins")
+    parser.add_argument('--num_resblks', type=int, default=4,
+                        help="Number of residual blocks")
+    parser.add_argument('--num_confblks', type=int, default=2,
+                        help="Number of conformer/cmconformer blocks")
+    parser.add_argument('--hidden_dim', type=int, default=512,
+                        help="Number of hidden dimensions in conformer/cmconformer blocks")
+    parser.add_argument('--kernel_size', type=int, default=3,
+                        help="Kernel size for the conformer/cmconformer blocks")
+    parser.add_argument('--num_heads', type=int, default=4,
+                        help="Number of heads for the conformer/cmconformer blocks")
+    parser.add_argument('--dropout', type=float, default=0.1,
+                        help="Dropout rate for the conformer/cmconformer blocks")
+    parser.add_argument('--output_classes', type=int, default=14,
+                        help="Number of classes for the sed head")
+    parser.add_argument('--class_overlaps', type=int, default=3,
+                        help="Number of overlapping frames for each class")
+    parser.add_argument('--audio_visual', type=bool, default=True,)
+    parser.add_argument('--chunk_lengths', type=float, default=1.0,
+                        help="Length of the chunks in seconds")
 
-trainer.fit(model, data_module)
-# trainer.test(model, data_module.test_dataloader())
+    args = parser.parse_args()
+    
+    # debug and test
+    args.audio_visual = False #True if args.path_images else False
+    args.max_epochs = 10
+    args.min_epochs = 5
+    args.validation_audio_predictors = args.training_audio_predictors
+    args.validation_audio_target = args.training_audio_target
+
+    main(args)
+    # data_module = create_data(args)
+    # print('data_module')
+
+
 
