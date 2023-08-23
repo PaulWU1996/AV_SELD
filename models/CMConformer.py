@@ -101,6 +101,29 @@ class ConformerBlock(nn.Module):
         x = self.norm4(residual*0.5 + self.dropout(x))
         return x
 
+class Conformer(nn.Module):
+    def __init__(self, hidden_dim, num_confblks=1, kernel_size=3, num_heads=4, dropout=0.1):
+        super(Conformer, self).__init__()
+        self.num_confblks = num_confblks
+        moduleDict = {}
+        for i in range(self.num_confblks):
+            moduleDict['cm_'+str(i)] = ConformerBlock(hidden_dim, kernel_size, num_heads, dropout)
+        self.moduleDict = nn.ModuleDict(moduleDict)
+
+    def forward(self, x):
+        r"""
+        Input:
+            x: main modality's input (batch, time, hidden_dim)
+        Output:
+            x: main modality's output (batch, time, hidden_dim)
+        """
+
+        for i in range(self.num_confblks):
+            x = self.moduleDict['cm_'+str(i)](x)
+        out = x
+        
+        return out
+
 
 class CMConformerBlock(nn.Module):
     def __init__(self, hidden_dim, kernel_size=3, num_heads=4, dropout=0.1):
@@ -241,75 +264,72 @@ class SingleCMConformer(nn.Module):
 
 class AV_SELD(nn.Module):
     def __init__(self,
-                    res_in = [16, 64, 128, 256], res_out = [64, 128, 256, 512], 
-                    input_channels=16, n_bins=128, num_classes=14, num_resblks=4, num_confblks=2, hidden_dim=512, kernel_size=3, num_heads=4, dropout=0.1,
+                    res_in = [8, 64, 128, 256], res_out = [64, 128, 256, 512], 
+                    n_bins=256, num_resblks=4, num_confblks=2, hidden_dim=512, kernel_size=3, num_heads=4, dropout=0.1,
+                    audio_visual=True, chunk_lengths=1.0,
                     output_classes=14, class_overlaps=3):
         super(AV_SELD, self).__init__()
-        self.n_bins = n_bins
-        self.num_classes = num_classes
+        
+        self.audio_visual = audio_visual
 
-        self.bn1 = nn.BatchNorm2d(self.n_bins)
+        self.bn1 = nn.BatchNorm2d(n_bins)
 
         # audio residual blocks
         self.audio_res = self._make_layer(res_in, res_out, num_resblks)
-        # self.audio_res = nn.Sequential(
-        #     nn.Conv2d(input_channels, hidden_dim, kernel_size=kernel_size, padding=kernel_size//2),
-        #     nn.BatchNorm2d(hidden_dim),
-        #     nn.ReLU(),
-        #     nn.MaxPool2d(kernel_size=(2,2), stride=(2, 2)),
-        #     self._make_layer(hidden_dim, num_resblks),
-        #     nn.MaxPool2d(kernel_size=(2,2), stride=(2, 2)),
-        # )
+        
+        if self.audio_visual:
+            # visual resnet18
+            resnet18 = torch.hub.load('pytorch/vision:v0.14.1', 'resnet18', weights=ResNet18_Weights.DEFAULT) # pretrained=False will be changed to True
+            modules = list(resnet18.children())[:-2]
+            extractor = nn.Sequential(*modules)
+            for p in extractor.parameters():
+                p.requires_grad = True # False
+            self.visual_res = nn.Sequential(
+                extractor,
+                nn.Flatten(2),
+                nn.Linear(49, 80),
+                nn.ReLU(),
+            )
+        
+            # crossmodal conformer
+            self.cm_conformer = CMConformer(hidden_dim=hidden_dim, num_confblks=num_confblks, kernel_size=kernel_size, num_heads=num_heads, dropout=dropout)
 
-        # visual resnet18
-        resnet18 = torch.hub.load('pytorch/vision:v0.14.1', 'resnet18', weights=ResNet18_Weights.DEFAULT) # pretrained=False will be changed to True
-        modules = list(resnet18.children())[:-2]
-        extractor = nn.Sequential(*modules)
-        for p in extractor.parameters():
-            p.requires_grad = True # False
-        self.visual_res = nn.Sequential(
-            extractor,
-            nn.Flatten(2),
-            nn.Linear(49, 80),
-            nn.ReLU(),
-        )
-
-        # crossmodal conformer
-        self.cm_conformer = CMConformer(hidden_dim=hidden_dim, num_confblks=num_confblks, kernel_size=kernel_size, num_heads=num_heads, dropout=dropout)
+        else:
+            self.conformer = Conformer(hidden_dim=hidden_dim, num_confblks=num_confblks, kernel_size=kernel_size, num_heads=num_heads, dropout=dropout)
 
         # dense layers
-        self.dense_layer = nn.Linear(80,10)
+        out_dim = int(chunk_lengths*10)
+        self.dense_layer = nn.Linear(out_dim*8,out_dim)
 
         # SSL predictor
         sed_output_size = output_classes * class_overlaps    #here 3 is the max number of simultaneus sounds from the same class
         doa_output_size = sed_output_size * 3   #here 3 is the number of spatial dimensions xyz
+        if audio_visual:
+            fc_dim = hidden_dim * 2
+        else:
+            fc_dim = hidden_dim
         self.sed = nn.Sequential(
-                    nn.Linear(1024, 1024),
+                    nn.Linear(fc_dim, fc_dim),
                     nn.ReLU(),
-                    nn.Linear(1024, 1024),
+                    nn.Linear(fc_dim, fc_dim),
                     nn.ReLU(),
-                    nn.Linear(1024, 1024),
+                    nn.Linear(fc_dim, fc_dim),
                     nn.ReLU(),
                     nn.Dropout(dropout*3),
-                    nn.Linear(1024, sed_output_size),
+                    nn.Linear(fc_dim, sed_output_size),
                     nn.Sigmoid())
 
         self.doa = nn.Sequential(
-                    nn.Linear(1024, 1024),
+                    nn.Linear(fc_dim, fc_dim),
                     nn.ReLU(),
-                    nn.Linear(1024, 1024),
+                    nn.Linear(fc_dim, fc_dim),
                     nn.ReLU(),
-                    nn.Linear(1024, 1024),
+                    nn.Linear(fc_dim, fc_dim),
                     nn.ReLU(),
                     nn.Dropout(dropout*3),
-                    nn.Linear(1024, doa_output_size),
+                    nn.Linear(fc_dim, doa_output_size),
                     nn.Tanh())
 
-    # def _make_layer(self, in_dim, hidden_dim, num_resblks):
-    #     layers = []
-    #     for i in range(num_resblks): 
-    #         layers.append(ResNetBlock(hidden_dim))
-    #     return nn.Sequential(*layers)
     def _make_layer(self, in_dim, hidden_dim, num_resblks):
         layers = []
         for i in range(num_resblks): 
@@ -318,13 +338,13 @@ class AV_SELD(nn.Module):
 
 
 
-    def forward(self, audio, img):
+    def forward(self, audio, img=None):
 
         r"""
         time !!!!! This is not being confirmed yet
         Input:
             audio: torch size ([batch, 16, 128, 2400])
-            img: torch size ([batch, 3, 224, 224])
+            img: None or torch size ([batch, 3, 224, 224]) (optional: if audio_visual is True, img is required)
 
         Output:
             res: torch size ([batch, 14, 128, 300])
@@ -336,18 +356,24 @@ class AV_SELD(nn.Module):
         x = x.permute(0,2,3,1)
         x = self.audio_res(x)
         x = x.mean(3)
-        x = x.permute(0,2,1) # torch size ([batch, time, 512]) for conformer input 
+        x = x.permute(0,2,1) # torch size ([batch, time, 512]) for conformer input
 
-        # visual feature extraction
-        y = self.visual_res(img)
-        y = y.permute(0,2,1) # torch size ([batch, time, 512]) for conformer input
 
-        # crossmodal conformer
-        z = self.cm_conformer(x, y) # torch size ([batch, time, 1024])
+        if self.audio_visual:
+
+            # visual feature extraction
+            y = self.visual_res(img)
+            y = y.permute(0,2,1) # torch size ([batch, time, 512]) for conformer input
+
+            # crossmodal conformer
+            z = self.cm_conformer(x, y) # torch size ([batch, time, 1024])
+
+        else:
+            z = self.conformer(x)
         
         # dense layers
         z = z.permute(0,2,1)
-        z = self.dense_layer(z) # torch size ([batch, 1024, 300])
+        z = self.dense_layer(z) # torch size ([batch, fc_dim, 300])
         z = z.permute(0,2,1)
 
         # output layer
@@ -357,102 +383,15 @@ class AV_SELD(nn.Module):
         return sed, doa
 
 
-class Test_demo(nn.Module):
-    def __init__(self,
-                    res_in = [16, 64, 128, 256], res_out = [64, 128, 256, 512], 
-                    input_channels=16, n_bins=128, num_classes=14, num_resblks=4, num_confblks=2, hidden_dim=512, kernel_size=3, num_heads=4, dropout=0.1,
-                    output_classes=14, class_overlaps=3):
-        super(Test_demo, self).__init__()
-
-        self.n_bins = n_bins
-        self.num_classes = num_classes
-
-        self.bn1 = nn.BatchNorm2d(self.n_bins)
-
-        # audio residual blocks
-        self.audio_res = self._make_layer(res_in, res_out, num_resblks)
-
-        # visual resnet18
-        resnet18 = torch.hub.load('pytorch/vision:v0.14.1', 'resnet18', weights=ResNet18_Weights.DEFAULT) # pretrained=False will be changed to True
-        modules = list(resnet18.children())[:-2]
-        extractor = nn.Sequential(*modules)
-        for p in extractor.parameters():
-            p.requires_grad = True # False
-        self.visual_res = nn.Sequential(
-            extractor,
-            nn.Flatten(2),
-            nn.Linear(49, 2400),
-            nn.ReLU(),
-        )
-
-        # dense layers
-        self.dense_layer = nn.Linear(2400,300)
-
-        # test output branches
-         # SSL predictor
-        sed_output_size = output_classes * class_overlaps    #here 3 is the max number of simultaneus sounds from the same class
-        doa_output_size = sed_output_size * 3   #here 3 is the number of spatial dimensions xyz
-        self.sed = nn.Sequential(
-                    nn.Linear(1024, 1024),
-                    nn.ReLU(),
-                    nn.Linear(1024, 1024),
-                    nn.ReLU(),
-                    nn.Linear(1024, 1024),
-                    nn.ReLU(),
-                    nn.Dropout(dropout*3),
-                    nn.Linear(1024, sed_output_size),
-                    nn.Sigmoid())
-
-        self.doa = nn.Sequential(
-                    nn.Linear(1024, 1024),
-                    nn.ReLU(),
-                    nn.Linear(1024, 1024),
-                    nn.ReLU(),
-                    nn.Linear(1024, 1024),
-                    nn.ReLU(),
-                    nn.Dropout(dropout*3),
-                    nn.Linear(1024, doa_output_size),
-                    nn.Tanh())
-
-    def forward(self, audio, img):
-        # audio feature extraction
-        x = audio.permute(0,2,1,3)
-        x = self.bn1(x)
-        x = x.permute(0,2,3,1)
-        x = self.audio_res(x)
-        x = x.mean(3)
-        x = x.permute(0,2,1) # torch size ([batch, time, 512]) for conformer input 
-
-        # visual feature extraction
-        y = self.visual_res(img)
-        y = y.permute(0,2,1) # torch size ([batch, time, 512]) for conformer input
-
-        # concat x & y
-        z = torch.cat((x, y), dim=2) # torch size ([batch, time, 1024])
-
-        # dense layers
-        z = z.permute(0,2,1)
-        z = self.dense_layer(z) # torch size ([batch, 1024, 300])
-        z = z.permute(0,2,1)
-
-        # output layer
-        sed = self.sed(z) # torch size ([batch, 14*3])
-        doa = self.doa(z) # torch size ([batch, 14*3*3])
-
-        return sed, doa
-
-    def _make_layer(self, in_dim, hidden_dim, num_resblks):
-        layers = []
-        for i in range(num_resblks): 
-            layers.append(ResNetBlock(in_dim=in_dim[i], hidden_dim=hidden_dim[i],))
-        return nn.Sequential(*layers)
 
 
 
 # audio = torch.randn(1,16,128,80)
 # img = torch.randn(1,3,224,224)
-# model = AV_SELD()
+# model = AV_SELD(res_in=[16,64,128,256],n_bins=128, audio_visual=False)
 
+# # # # model = Test_demo()
+# sed, doa = model(audio)
 # # model = Test_demo()
-# sed, doa = model(audio, img)
+# # sed = model(audio)
 # print('done')

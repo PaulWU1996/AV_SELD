@@ -84,19 +84,19 @@ def convert(predictors, targets, chunk_length=1):
     out_files = []
     out_targets = []
 
-    label_frame_in_chunk = chunk_length * 10
-    feat_frame_in_chunk = label_frame_in_chunk * 8
+    label_frame_in_chunk = int(chunk_length * 10)
+    feat_frame_in_chunk = int(label_frame_in_chunk * 8)
 
     nfile = len(predictors[0])
     for fn in range(nfile):
         feature = predictors[0][fn]
-        feature = np.concatenate((feature[:,:128,:],feature[:,128:,:]), axis=0)
+        # feature = np.concatenate((feature[:,:128,:],feature[:,128:,:]), axis=0)
 
         file_name = predictors[1][fn]
         target = targets[fn]
         all_steps = feature.shape[2]
 
-        chunk_step = all_steps // (8*chunk_length*10)
+        chunk_step = all_steps // feat_frame_in_chunk
         
         for i in range(chunk_step):
             out_features.append(feature[:,:,i*feat_frame_in_chunk:(i+1)*feat_frame_in_chunk])
@@ -111,11 +111,12 @@ def convert(predictors, targets, chunk_length=1):
 
 # import pickle
 # from torchvision import transforms
+# import matplotlib.pyplot as plt
 
-# with open('/mnt/fast/nobackup/scratch4weeks/pw00391/Task2/processed/task2_predictors_train.pkl', 'rb') as f:
+# with open('/mnt/fast/nobackup/scratch4weeks/pw00391/Output/processed/task2_predictors_train.pkl', 'rb') as f:
 #     audio_predictors = pickle.load(f)
 
-# with open('/mnt/fast/nobackup/scratch4weeks/pw00391/Task2/processed/task2_target_train.pkl', 'rb') as f:
+# with open('/mnt/fast/nobackup/scratch4weeks/pw00391/Output/processed/task2_target_train.pkl', 'rb') as f:
 #     audio_target = pickle.load(f)
 
 
@@ -136,5 +137,10 @@ def convert(predictors, targets, chunk_length=1):
 
 # print("Train set length: ", len(train_set))
 # (audio,img), target = train_set.__getitem__(3)
+# # plt.imshow(img.permute(1, 2, 0))
+# # %%
+# plt.figure()
+# plt.imshow(audio[0], cmap='viridis')
+# plt.show()
 # print('done')
 
