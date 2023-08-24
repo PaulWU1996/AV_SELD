@@ -13,9 +13,10 @@ from torch.optim import Adam
 from tqdm import tqdm
 from torchvision import transforms
 
-from models.SELDNet import Seldnet_augmented, Seldnet_vanilla, audiovisual_Seldnet_augmented
+
+from models.CMConformer import AV_SELD
 from utility_functions import load_model, save_model
-from custom_dataset import CustomAudioVisualDataset
+from custom_dataset import AudioVisualDataset
 
 '''
 Train our baseline model for the Task2 of the L3DAS23 challenge.
@@ -109,90 +110,113 @@ def main(args):
     with open(args.test_target_path, 'rb') as f:
         test_target = pickle.load(f)
 
-    training_audio_predictors = np.array(training_predictors[0])
-    training_img_predictors = training_predictors[1]
-    training_target = np.array(training_target)
-    validation_audio_predictors = np.array(validation_predictors[0])
-    validation_img_predictors = validation_predictors[1]
-    validation_target = np.array(validation_target)
-    test_audio_predictors = np.array(test_predictors[0])
-    test_img_predictors = test_predictors[1]
-    test_target = np.array(test_target)
+    # training_audio_predictors = np.array(training_predictors[0])
+    # training_img_predictors = training_predictors[1]
+    # training_target = np.array(training_target)
+    # validation_audio_predictors = np.array(validation_predictors[0])
+    # validation_img_predictors = validation_predictors[1]
+    # validation_target = np.array(validation_target)
+    # test_audio_predictors = np.array(test_predictors[0])
+    # test_img_predictors = test_predictors[1]
+    # test_target = np.array(test_target)
 
 
-    if args.normalize_predictors:
-        print ("Normalizing input data to 0 mean and unity std")
-        tr_mean = np.mean(training_audio_predictors)
-        tr_std = np.std(training_audio_predictors)
-        training_audio_predictors = np.subtract(training_audio_predictors, tr_mean)
-        training_audio_predictors = np.divide(training_audio_predictors, tr_std)
-        validation_audio_predictors = np.subtract(validation_audio_predictors, tr_mean)
-        validation_audio_predictors = np.divide(validation_audio_predictors, tr_std)
-        test_audio_predictors = np.subtract(test_audio_predictors, tr_mean)
-        test_audio_predictors = np.divide(test_audio_predictors, tr_std)
+    # if args.normalize_predictors:
+    #     print ("Normalizing input data to 0 mean and unity std")
+    #     tr_mean = np.mean(training_audio_predictors)
+    #     tr_std = np.std(training_audio_predictors)
+    #     training_audio_predictors = np.subtract(training_audio_predictors, tr_mean)
+    #     training_audio_predictors = np.divide(training_audio_predictors, tr_std)
+    #     validation_audio_predictors = np.subtract(validation_audio_predictors, tr_mean)
+    #     validation_audio_predictors = np.divide(validation_audio_predictors, tr_std)
+    #     test_audio_predictors = np.subtract(test_audio_predictors, tr_mean)
+    #     test_audio_predictors = np.divide(test_audio_predictors, tr_std)
 
-    print ('\nShapes:')
-    print ('Training predictors: ', training_audio_predictors.shape)
-    print ('Validation predictors: ', validation_audio_predictors.shape)
-    print ('Test predictors: ', test_audio_predictors.shape)
-    print ('Training target: ', training_target.shape)
-    print ('Validation target: ', validation_target.shape)
-    print ('Test target: ', test_target.shape)
+    # print ('\nShapes:')
+    # print ('Training predictors: ', training_audio_predictors.shape)
+    # print ('Validation predictors: ', validation_audio_predictors.shape)
+    # print ('Test predictors: ', test_audio_predictors.shape)
+    # print ('Training target: ', training_target.shape)
+    # print ('Validation target: ', validation_target.shape)
+    # print ('Test target: ', test_target.shape)
 
-    features_dim = int(test_target.shape[-2] * test_target.shape[-1])
+    # features_dim = int(test_target.shape[-2] * test_target.shape[-1])
 
-    #convert to tensor
-    training_audio_predictors = torch.tensor(training_audio_predictors).float()
-    # training_img_predictors = torch.tensor(training_img_predictors)
-    validation_audio_predictors = torch.tensor(validation_audio_predictors).float()
-    # validation_img_predictors = torch.tensor(validation_img_predictors)
-    test_audio_predictors = torch.tensor(test_audio_predictors).float()
-    # test_img_predictors = torch.tensor(test_img_predictors)
-    training_target = torch.tensor(training_target).float()
-    validation_target = torch.tensor(validation_target).float()
-    test_target = torch.tensor(test_target).float()
-    #build dataset from tensors
-    # tr_dataset = utils.TensorDataset(training_predictors, training_target)
-    # val_dataset = utils.TensorDataset(validation_predictors, validation_target)
-    # test_dataset = utils.TensorDataset(test_predictors, test_target)
+    # #convert to tensor
+    # training_audio_predictors = torch.tensor(training_audio_predictors).float()
+    # # training_img_predictors = torch.tensor(training_img_predictors)
+    # validation_audio_predictors = torch.tensor(validation_audio_predictors).float()
+    # # validation_img_predictors = torch.tensor(validation_img_predictors)
+    # test_audio_predictors = torch.tensor(test_audio_predictors).float()
+    # # test_img_predictors = torch.tensor(test_img_predictors)
+    # training_target = torch.tensor(training_target).float()
+    # validation_target = torch.tensor(validation_target).float()
+    # test_target = torch.tensor(test_target).float()
+    # #build dataset from tensors
+    # # tr_dataset = utils.TensorDataset(training_predictors, training_target)
+    # # val_dataset = utils.TensorDataset(validation_predictors, validation_target)
+    # # test_dataset = utils.TensorDataset(test_predictors, test_target)
     
     transform = transforms.Compose([
+        transforms.Resize((224, 224)),    
         transforms.ToTensor(),
     ])
 
-    tr_dataset = CustomAudioVisualDataset((training_audio_predictors, training_img_predictors), training_target, args.path_images, args.path_csv_images_train, transform)
-    val_dataset = CustomAudioVisualDataset((validation_audio_predictors,validation_img_predictors), validation_target, args.path_images, args.path_csv_images_train, transform)
-    test_dataset = CustomAudioVisualDataset((test_audio_predictors,test_img_predictors), test_target, args.path_images, args.path_csv_images_test, transform)
+    # tr_dataset = CustomAudioVisualDataset((training_audio_predictors, training_img_predictors), training_target, args.path_images, args.path_csv_images_train, transform)
+    # val_dataset = CustomAudioVisualDataset((validation_audio_predictors,validation_img_predictors), validation_target, args.path_images, args.path_csv_images_train, transform)
+    # test_dataset = CustomAudioVisualDataset((test_audio_predictors,test_img_predictors), test_target, args.path_images, args.path_csv_images_test, transform)
+
+    tr_dataset = AudioVisualDataset(audio_predictors=training_predictors, 
+                audio_target=training_target, 
+                image_path=args.path_images,
+                image_audio_csv_path=args.path_csv_images_train, 
+                transform_image=transform)
+    val_dataset = AudioVisualDataset(audio_predictors=validation_predictors, 
+                audio_target=validation_target, 
+                image_path=args.path_images,
+                image_audio_csv_path=args.path_csv_images_train, 
+                transform_image=transform)
+    test_dataset = AudioVisualDataset(audio_predictors=test_predictors,
+                audio_target=test_target, 
+                image_path=args.path_images,
+                image_audio_csv_path=args.path_csv_images_test, 
+                transform_image=transform)
+
     #build data loader from dataset
     tr_data = utils.DataLoader(tr_dataset, args.batch_size, shuffle=True)
     val_data = utils.DataLoader(val_dataset, args.batch_size, shuffle=False)
     test_data = utils.DataLoader(test_dataset, args.batch_size, shuffle=False)
 
     #LOAD MODEL
-    if args.architecture == 'seldnet_vanilla':
-        n_time_frames = test_audio_predictors.shape[-1]
-        model = Seldnet_vanilla(time_dim=n_time_frames, freq_dim=args.freq_dim, input_channels=args.input_channels,
-                    output_classes=args.output_classes, pool_size=args.pool_size,
-                    pool_time=args.pool_time, rnn_size=args.rnn_size, n_rnn=args.n_rnn,
-                    fc_size=args.fc_size, dropout_perc=args.dropout_perc,
-                    n_cnn_filters=args.n_cnn_filters, class_overlaps=args.class_overlaps,
-                    verbose=args.verbose)
-    if args.architecture == 'seldnet_augmented':
-        n_time_frames = test_audio_predictors.shape[-1]
-        model = Seldnet_augmented(time_dim=n_time_frames, freq_dim=args.freq_dim, input_channels=args.input_channels,
-                    output_classes=args.output_classes, pool_size=args.pool_size,
-                    pool_time=args.pool_time, rnn_size=args.rnn_size, n_rnn=args.n_rnn,
-                    fc_size=args.fc_size, dropout_perc=args.dropout_perc,
-                    cnn_filters=args.cnn_filters, class_overlaps=args.class_overlaps,
-                    verbose=args.verbose)
-    if args.architecture == 'audiovisual_seldnet_augmented':
-        n_time_frames = test_audio_predictors.shape[-1]
-        model = audiovisual_Seldnet_augmented(time_dim=n_time_frames, freq_dim=args.freq_dim, input_channels=args.input_channels,
-                    output_classes=args.output_classes, pool_size=args.pool_size,
-                    pool_time=args.pool_time, rnn_size=args.rnn_size, n_rnn=args.n_rnn,
-                    fc_size=args.fc_size, dropout_perc=args.dropout_perc,
-                    cnn_filters=args.cnn_filters, class_overlaps=args.class_overlaps,
-                    verbose=args.verbose)
+    # if args.architecture == 'seldnet_vanilla':
+    #     n_time_frames = test_audio_predictors.shape[-1]
+    #     model = Seldnet_vanilla(time_dim=n_time_frames, freq_dim=args.freq_dim, input_channels=args.input_channels,
+    #                 output_classes=args.output_classes, pool_size=args.pool_size,
+    #                 pool_time=args.pool_time, rnn_size=args.rnn_size, n_rnn=args.n_rnn,
+    #                 fc_size=args.fc_size, dropout_perc=args.dropout_perc,
+    #                 n_cnn_filters=args.n_cnn_filters, class_overlaps=args.class_overlaps,
+    #                 verbose=args.verbose)
+    # if args.architecture == 'seldnet_augmented':
+    #     n_time_frames = test_audio_predictors.shape[-1]
+    #     model = Seldnet_augmented(time_dim=n_time_frames, freq_dim=args.freq_dim, input_channels=args.input_channels,
+    #                 output_classes=args.output_classes, pool_size=args.pool_size,
+    #                 pool_time=args.pool_time, rnn_size=args.rnn_size, n_rnn=args.n_rnn,
+    #                 fc_size=args.fc_size, dropout_perc=args.dropout_perc,
+    #                 cnn_filters=args.cnn_filters, class_overlaps=args.class_overlaps,
+    #                 verbose=args.verbose)
+    # if args.architecture == 'audiovisual_seldnet_augmented':
+    #     n_time_frames = test_audio_predictors.shape[-1]
+    #     model = audiovisual_Seldnet_augmented(time_dim=n_time_frames, freq_dim=args.freq_dim, input_channels=args.input_channels,
+    #                 output_classes=args.output_classes, pool_size=args.pool_size,
+    #                 pool_time=args.pool_time, rnn_size=args.rnn_size, n_rnn=args.n_rnn,
+    #                 fc_size=args.fc_size, dropout_perc=args.dropout_perc,
+    #                 cnn_filters=args.cnn_filters, class_overlaps=args.class_overlaps,
+    #                 verbose=args.verbose)
+
+    if args.architecture == 'CMConformer':
+        model = AV_SELD(res_in=args.res_in, res_out=args.res_out, n_bins=args.n_bins, 
+                num_resblks=args.num_resblks, num_confblks=args.num_confblks, hidden_dim=args.hidden_dim, kernel_size=args.kernel_size, num_heads=args.num_heads, dropout=args.dropout, 
+                audio_visual=args.audio_visual, chunk_lengths=args.chunk_lengths, output_classes=args.output_classes, class_overlaps=args.class_overlaps)
 
     if args.use_cuda:
         print("Moving model to gpu")
@@ -226,7 +250,7 @@ def main(args):
     train_loss_hist = []
     val_loss_hist = []
     epoch = 1
-    while state["epochs"] < args.patience:
+    while state["worse_epochs"] < args.patience:
         print("Training epoch " + str(epoch))
         avg_time = 0.
         model.train()
@@ -336,7 +360,7 @@ if __name__ == '__main__':
     parser.add_argument('--fixed_seed', type=str, default='False')
 
     parser.add_argument('--lr', type=float, default=0.00001)
-    parser.add_argument('--batch_size', type=int, default=3,
+    parser.add_argument('--batch_size', type=int, default=8,
                         help="Batch size")
     parser.add_argument('--sr', type=int, default=32000,
                         help="Sampling rate")
@@ -348,7 +372,7 @@ if __name__ == '__main__':
 
     #model parameters
     #the following parameters produce a prediction for each 100-msecs frame
-    parser.add_argument('--architecture', type=str, default='audiovisual_seldnet_augmented',
+    parser.add_argument('--architecture', type=str, default='CMConformer',
                         help="model's architecture, can be seldnet_vanilla or seldnet_augmented")
     parser.add_argument('--input_channels', type=int, default=4,
                         help="4/8 for 1/2 mics, multiply x2 if using also phase information")
@@ -371,6 +395,32 @@ if __name__ == '__main__':
     parser.add_argument('--verbose', type=str, default='False')
     parser.add_argument('--sed_loss_weight', type=float, default=1.)
     parser.add_argument('--doa_loss_weight', type=float, default=5.)
+
+    parser.add_argument('--res_in',type=list, default=[4, 64, 128, 256],
+                        help="Number of input channels for each residual block")
+    parser.add_argument('--res_out',type=list, default=[64, 128, 256, 512],
+                        help="Number of output channels for each residual block")
+    parser.add_argument('--n_bins', type=int, default=256,
+                        help="Number of frequency bins")
+    parser.add_argument('--num_resblks', type=int, default=4,
+                        help="Number of residual blocks")
+    parser.add_argument('--num_confblks', type=int, default=2,
+                        help="Number of conformer/cmconformer blocks")
+    parser.add_argument('--hidden_dim', type=int, default=512,
+                        help="Number of hidden dimensions in conformer/cmconformer blocks")
+    parser.add_argument('--kernel_size', type=int, default=3,
+                        help="Kernel size for the conformer/cmconformer blocks")
+    parser.add_argument('--num_heads', type=int, default=4,
+                        help="Number of heads for the conformer/cmconformer blocks")
+    parser.add_argument('--dropout', type=float, default=0.1,
+                        help="Dropout rate for the conformer/cmconformer blocks")
+    # parser.add_argument('--output_classes', type=int, default=14,
+    #                     help="Number of classes for the sed head")
+    # parser.add_argument('--class_overlaps', type=int, default=3,
+    #                     help="Number of overlapping frames for each class")
+    parser.add_argument('--audio_visual', type=bool, default=False,)
+    parser.add_argument('--chunk_lengths', type=float, default=1.0,
+                        help="Length of the chunks in seconds")
 
     args = parser.parse_args()
 

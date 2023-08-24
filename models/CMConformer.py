@@ -274,6 +274,32 @@ class AV_SELD(nn.Module):
 
         self.bn1 = nn.BatchNorm2d(n_bins)
 
+        # #building CNN feature extractor
+        # self.cnn = nn.Sequential(
+        #     nn.Conv2d(4, 64, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1)),
+        #     nn.BatchNorm2d(64, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True),
+        #     nn.ReLU(inplace=True),
+        #     nn.MaxPool2d(kernel_size=(8, 2), stride=(8, 2), padding=0, dilation=1, ceil_mode=False),
+        #     nn.Dropout(p=0.1, inplace=False),
+
+        #     nn.Conv2d(64, 128, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1)),
+        #     nn.BatchNorm2d(128, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True),
+        #     nn.ReLU(inplace=True),
+        #     nn.MaxPool2d(kernel_size=(8, 2), stride=(8, 2), padding=0, dilation=1, ceil_mode=False),
+
+        #     nn.Conv2d(128, 256, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1)),
+        #     nn.BatchNorm2d(256, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True),
+        #     nn.ReLU(inplace=True),
+        #     nn.MaxPool2d(kernel_size=(2, 2), stride=(2, 2), padding=0, dilation=1, ceil_mode=False),
+        #     nn.Dropout(p=0.1, inplace=False),
+
+        #     nn.Conv2d(256, 512, kernel_size=(3, 3), stride=(1, 1), padding=(1, 1)),
+        #     nn.BatchNorm2d(512, eps=1e-05, momentum=0.1, affine=True, track_running_stats=True),
+        #     nn.ReLU(inplace=True),
+        #     nn.MaxPool2d(kernel_size=(1, 1), stride=(1, 1), padding=0, dilation=1, ceil_mode=False),
+        #     nn.Dropout(p=0.1, inplace=False),
+        # )
+
         # audio residual blocks
         self.audio_res = self._make_layer(res_in, res_out, num_resblks)
         
@@ -283,7 +309,7 @@ class AV_SELD(nn.Module):
             modules = list(resnet18.children())[:-2]
             extractor = nn.Sequential(*modules)
             for p in extractor.parameters():
-                p.requires_grad = True # False
+                p.requires_grad = False # False
             self.visual_res = nn.Sequential(
                 extractor,
                 nn.Flatten(2),
@@ -350,7 +376,9 @@ class AV_SELD(nn.Module):
             res: torch size ([batch, 14, 128, 300])
         """
 
-        # audio feature extraction
+        # x = self.cnn(audio)
+
+        #audio feature extraction
         x = audio.permute(0,2,1,3)
         x = self.bn1(x)
         x = x.permute(0,2,3,1)
@@ -370,7 +398,10 @@ class AV_SELD(nn.Module):
 
         else:
             z = self.conformer(x)
+
+        # z = x.mean(2).permute(0,2,1)
         
+
         # dense layers
         z = z.permute(0,2,1)
         z = self.dense_layer(z) # torch size ([batch, fc_dim, 300])

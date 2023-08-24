@@ -129,7 +129,7 @@ def gen_submission_list_task2(sed, doa, max_loc_value=360.,num_frames=300, num_c
             l = l * max_loc_value  #turn back locations between -2,2 as in the original dataset
             l = l.reshape(num_classes, max_overlaps, 3)  #num_class, event number, coordinates
             
-            if np.sum(c.numpy()) == 0:  #if no sounds are detected in a frame
+            if np.sum(c.numpy()) == 0:  #if no sounds are detected in a frame c.numpy()
                 pass            #don't append
             else:
                 for j, e in enumerate(c):  #iterate all events

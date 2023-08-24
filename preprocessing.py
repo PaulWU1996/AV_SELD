@@ -339,7 +339,7 @@ def preprocessing_task2(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     #i/o
-    mnt_path = '/mnt/fast/nobackup/scratch4weeks/pw00391/'
+    mnt_path = '/vol/research/VS-Work/PW00391/L3DAS23'
     parser.add_argument('--task', type=int,
                         help='task to be pre-processed')
     parser.add_argument('--audio_visual', type=bool, default=True,

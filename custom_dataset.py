@@ -46,7 +46,7 @@ class CustomAudioVisualDataset(utils.Dataset):
             if self.transform:
                 img = self.transform(img)
 
-            return (audio_pred.astype(np.float32), img.to(torch.float32)), audio_trg.astype(np.float32)
+            return (audio_pred, img), audio_trg #(audio_pred.astype(np.float32), img.to(torch.float32)), audio_trg.astype(np.float32)
         
         return audio_pred.astype(np.float32), audio_trg.astype(np.float32)
     
@@ -109,31 +109,132 @@ def convert(predictors, targets, chunk_length=1):
     return out_predictors, out_targets
 
 
+
+
+class AudioVisualDataset(utils.Dataset):
+    def __init__(self, audio_predictors, audio_target, image_path=None, image_audio_csv_path=None, transform_image=None, chunk_length=1.0):
+        self.audio_predictors = audio_predictors[0]
+        self.audio_target = audio_target
+        self.audio_predictors_path = audio_predictors[1]
+        self.image_path = image_path
+        if image_path:
+            print("AUDIOVISUAL ON")
+            self.av = True
+            self.image_audio_dict = audio_image_csv_to_dict(image_audio_csv_path)
+            self.transform = transform_image
+        else:
+            self.av
+            print("AUDIOVISUAL OFF")
+
+        self.chunk_length = chunk_length
+
+        self.chunks = {}
+        for fn in range(len(self.audio_predictors)):
+            self._append_chunks(fn, self.audio_predictors[fn], self.audio_target[fn], self.audio_predictors_path[fn], self.chunk_length)            
+            
+
+
+    def _append_chunks(self, fn, audio_predictor, audio_target, audio_predictor_path, chunk_length=1.0):
+        r"""
+        Input:
+            fn: (int) file idx
+            audio_feat: (np.array) [nchannels, nfeatures, nframes]
+            target: (np.array) [nframes, nclasses]
+            img: (str) image name
+            chunk_length: (float) length of chunk in seconds
+        Output:
+        {
+            file_idx: (int) file idx
+            audio_start_loc: (int) start location of audio chunk
+            audio_end_loc: (int) end location of audio chunk
+            img_name: (str) image name
+            label_start_loc: (int) start location of label chunk
+            label_end_loc: (int) end location of label chunk
+        }
+        """
+
+        label_frame_in_chunk = int(chunk_length * 10)
+        feat_frame_in_chunk = int(label_frame_in_chunk * 8)
+
+        num_chunks = int(audio_predictor.shape[2] / feat_frame_in_chunk)
+
+        for chunk_idx in range(num_chunks):
+            sequence_idx = len(self.chunks)
+
+            feat_start_loc = chunk_idx * feat_frame_in_chunk
+            feat_end_loc = feat_start_loc + feat_frame_in_chunk
+
+            label_start_loc = chunk_idx * label_frame_in_chunk
+            label_end_loc = label_start_loc + label_frame_in_chunk
+
+            if self.av:
+                img_name = self.image_audio_dict[audio_predictor_path]
+
+                self.chunks[sequence_idx] = {
+                    'file_idx': fn,  
+                    'audio_start_loc': feat_start_loc,
+                    'audio_end_loc': feat_end_loc,
+                    'img_name': img_name,
+                    'label_start_loc': label_start_loc,
+                    'label_end_loc': label_end_loc
+                }
+            else:
+                self.chunks[sequence_idx] = {
+                    'file_idx': fn,  
+                    'audio_start_loc': feat_start_loc,
+                    'audio_end_loc': feat_end_loc,
+                    'label_start_loc': label_start_loc,
+                    'label_end_loc': label_end_loc
+                }
+
+    
+    def __len__(self):
+        return len(self.chunks)
+    
+
+    def __getitem__(self, idx):
+        sequence = self.chunks[idx]
+
+        audio = self.audio_predictors[sequence['file_idx']][:,:,sequence['audio_start_loc']:sequence['audio_end_loc']].astype(np.float32)
+        target = self.audio_target[sequence['file_idx']][sequence['label_start_loc']:sequence['label_end_loc']].astype(np.float32)
+
+        if self.av:
+            img = load_image(os.path.join(self.image_path, sequence['img_name']))
+            img = self.transform(img)
+
+            return (torch.from_numpy(audio), img), torch.from_numpy(target)
+        else:
+            return torch.from_numpy(audio), torch.from_numpy(target)
+
+
 # import pickle
 # from torchvision import transforms
-# import matplotlib.pyplot as plt
 
-# with open('/mnt/fast/nobackup/scratch4weeks/pw00391/Output/processed/task2_predictors_train.pkl', 'rb') as f:
+
+# with open('/vol/research/VS-Work/PW00391/L3DAS23/Output/processed/task2_predictors_train.pkl', 'rb') as f:
 #     audio_predictors = pickle.load(f)
 
-# with open('/mnt/fast/nobackup/scratch4weeks/pw00391/Output/processed/task2_target_train.pkl', 'rb') as f:
+# with open('/vol/research/VS-Work/PW00391/L3DAS23/Output/processed/task2_target_train.pkl', 'rb') as f:
 #     audio_target = pickle.load(f)
 
 
-# predictors, targets = convert(audio_predictors, audio_target)
+# # predictors, targets = convert(audio_predictors, audio_target)
 
 # transform = transforms.Compose([
 #         transforms.Resize((224, 224)),     # 重新调整图像大小为 (224, 224)
 #         transforms.ToTensor(),
 #     ])
 
-# train_set = CustomAudioVisualDataset(audio_predictors=predictors, 
-#                 audio_target=targets, 
-#                 image_path='/mnt/fast/nobackup/scratch4weeks/pw00391/Task2/L3DAS23_Task2_images', 
-#                 image_audio_csv_path='Task2/L3DAS23_Task2_train/audio_image.csv', 
+# train_set = AudioVisualDataset(audio_predictors=audio_predictors, 
+#                 audio_target=audio_target, 
+#                 image_path='/vol/research/VS-Work/PW00391/L3DAS23/L3DAS23_Task2_images', 
+#                 image_audio_csv_path='/vol/research/VS-Work/PW00391/L3DAS23/L3DAS23_Task2_train/audio_image.csv', 
 #                 transform_image=transform)
 
 
+# print("Train set length: ", len(train_set))
+# (audio,img), target = train_set.__getitem__(123)
+# print('done')
 
 # print("Train set length: ", len(train_set))
 # (audio,img), target = train_set.__getitem__(3)
@@ -143,4 +244,3 @@ def convert(predictors, targets, chunk_length=1):
 # plt.imshow(audio[0], cmap='viridis')
 # plt.show()
 # print('done')
-

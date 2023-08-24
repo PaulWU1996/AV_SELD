@@ -159,15 +159,15 @@ def main(args):
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     #i/o parameters
-    parser.add_argument('--model_path', type=str, default='RESULTS/Task2/checkpoint')
+    parser.add_argument('--model_path', type=str, default='/vol/research/VS-Work/PW00391/AV_SELD/RESULTS/Task2/checkpoint')
     parser.add_argument('--results_path', type=str, default='RESULTS/Task2/metrics')
-    parser.add_argument('--path_images', type=str, default=None,
-                        help="Path to the folder containing all images of Task2. None when using the audio only version")
-    parser.add_argument('--path_csv_images', type=str, default='DATASETS/Task2/L3DAS23_Task2_dev/audio_image.csv',
+    parser.add_argument('--path_images', type=str, default='/vol/research/VS-Work/PW00391/L3DAS23/L3DAS23_Task2_images',
+                        help="Path to the folder containing all images of Task2. None when using the audio-only version")
+    parser.add_argument('--path_csv_images', type=str, default='/vol/research/VS-Work/PW00391/L3DAS23/L3DAS23_Task2_dev/audio_image.csv',
                         help="Path to the CSV file for the couples (name_audio, name_photo)")
     #dataset parameters
-    parser.add_argument('--predictors_path', type=str, default='DATASETS/processed/task2_predictors_test.pkl')
-    parser.add_argument('--target_path', type=str, default='DATASETS/processed/task2_target_test.pkl')
+    parser.add_argument('--predictors_path', type=str, default='/vol/research/VS-Work/PW00391/L3DAS23/Output/processed/task2_predictors_test.pkl')
+    parser.add_argument('--target_path', type=str, default='/vol/research/VS-Work/PW00391/L3DAS23/Output/processed/task2_target_test.pkl')
     parser.add_argument('--sr', type=int, default=32000)
     #eval parameters
     parser.add_argument('--max_loc_value', type=float, default=360,
@@ -178,7 +178,7 @@ if __name__ == '__main__':
                         help='max cartesian distance for considering a true positive')
     #model parameters
     #the following parameters produce a prediction for each 100-msecs frame
-    parser.add_argument('--architecture', type=str, default='seldnet_augmented',
+    parser.add_argument('--architecture', type=str, default='audiovisual_seldnet_augmented',
                         help="model's architecture, can be seldnet_vanilla or seldnet_augmented")
     parser.add_argument('--input_channels', type=int, default=4,
                         help="4/8 for 1/2 mics, multiply x2 if using also phase information")
