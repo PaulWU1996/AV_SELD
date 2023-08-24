@@ -283,7 +283,7 @@ class AV_SELD(nn.Module):
             modules = list(resnet18.children())[:-2]
             extractor = nn.Sequential(*modules)
             for p in extractor.parameters():
-                p.requires_grad = True # False
+                p.requires_grad = False # False
             self.visual_res = nn.Sequential(
                 extractor,
                 nn.Flatten(2),

@@ -1,7 +1,7 @@
 from typing import Any, List
 import sys
 
-from models.CMConformer import AV_SELD, Test_demo
+from models.CMConformer import AV_SELD
 from custom_dataset import CustomAudioVisualDataset, convert
 from metrics import location_sensitive_detection
 from utility_functions import gen_submission_list_task2
@@ -75,7 +75,7 @@ class AudioVisualDatasetModule(pl.LightningDataModule):
                     audio_target=self.audio_target[2])
     
     def train_dataloader(self):
-        return torch.utils.data.DataLoader(self.train_set, batch_size=self.batch_size, shuffle=True, num_workers=4)
+        return torch.utils.data.DataLoader(self.train_set, batch_size=self.batch_size, shuffle=False, num_workers=4)
 
     def val_dataloader(self):
         return torch.utils.data.DataLoader(self.val_set, batch_size=self.batch_size, shuffle=False, num_workers=4)
@@ -228,13 +228,13 @@ class Model(pl.LightningModule):
     def __init__(self,
                 res_in = [8, 64, 128, 256], res_out = [64, 128, 256, 512], 
                 n_bins=256, num_resblks=4, num_confblks=2, hidden_dim=512, kernel_size=3, num_heads=4, dropout=0.1,
+                audio_visual=True, chunk_lengths=1.0,
                 output_classes=14, class_overlaps=3,
                 lr=0.00005, warmup_epochs=10,):
         super().__init__()
         
-        # self.model = AV_SELD(input_channels=input_channels, n_bins=n_bins, num_classes=num_classes, num_resblks=num_resblks, num_confblks=num_confblks, hidden_dim=hidden_dim, kernel_size=kernel_size, num_heads=num_heads, dropout=dropout, output_classes=output_classes, class_overlaps=class_overlaps)
-        self.model = Test_demo(input_channels=input_channels, n_bins=n_bins, num_classes=num_classes, num_resblks=num_resblks, num_confblks=num_confblks, hidden_dim=hidden_dim, kernel_size=kernel_size, num_heads=num_heads, dropout=dropout, output_classes=output_classes, class_overlaps=class_overlaps)
-        
+        #self.model = AV_SELD(input_channels=input_channels, n_bins=n_bins, num_classes=num_classes, num_resblks=num_resblks, num_confblks=num_confblks, hidden_dim=hidden_dim, kernel_size=kernel_size, num_heads=num_heads, dropout=dropout, output_classes=output_classes, class_overlaps=class_overlaps)
+        self.model = AV_SELD(res_in=res_in, res_out=res_out, n_bins=n_bins, num_resblks=num_resblks, num_confblks=num_confblks, hidden_dim=hidden_dim, kernel_size=kernel_size, num_heads=num_heads, dropout=dropout, audio_visual=audio_visual, chunk_lengths=chunk_lengths, output_classes=output_classes, class_overlaps=class_overlaps)
 
         self.criterion_sed = nn.BCELoss()
         self.criterion_doa = nn.MSELoss()
@@ -280,7 +280,7 @@ class Model(pl.LightningModule):
         sed, doa = self.model(audio, img)
         # val_loss = seld_loss(sed, doa, target, self.criterion_sed, self.criterion_doa, output_classes=14, class_overlaps=3)
 
-        sed = self.model(audio)
+        # sed = self.model(audio)
         val_loss = seld_loss(sed, torch.zeros((sed.shape[0],10,126),device=sed.device), target, self.criterion_sed, self.criterion_doa, output_classes=14, class_overlaps=3)
 
 
@@ -386,7 +386,7 @@ def main(args):
 
     model = Model(res_in=args.res_in, res_out=args.res_out, n_bins=args.n_bins, num_resblks=args.num_resblks, num_confblks=args.num_confblks, hidden_dim=args.hidden_dim, kernel_size=args.kernel_size, num_heads=args.num_heads, dropout=args.dropout, output_classes=args.output_classes, class_overlaps=args.class_overlaps, lr=args.lr, warmup_epochs=args.warmup_epochs, audio_visual=args.audio_visual, chunk_lengths=args.chunk_lengths)
 
-    EarlyStopping = EarlyStopping(monitor='val_f_score', patience=args.patience, mode='max')
+    earlyStopping = EarlyStopping(monitor='val_f_score', patience=args.patience, mode='max')
     checkpoint_callback = ModelCheckpoint(dirpath=args.ckpt_path, filename='{epoch}-{val_loss:.2f}-{val_f_score:.2f}')
 
     trainer = Trainer(fast_dev_run=False,  
@@ -395,9 +395,18 @@ def main(args):
                     accelerator='auto',  
                     deterministic=True,
                     enable_checkpointing=True, 
-                    callbacks=[EarlyStopping, checkpoint_callback], 
+                    callbacks=[earlyStopping, checkpoint_callback],
+                    # auto_lr_find=True, 
                     logger=wandb_logger
                     )
+
+    # import lightning as L
+
+    # tuner = L.pytorch.tuner.Tuner(trainer)
+    # tuner.lr_find(model, data_module)
+
+    # fig = lr_finder.plot(suggest=True)
+    # fig.show()
 
     trainer.fit(model, data_module)
     # trainer.test(model, data_module.test_dataloader())
@@ -407,34 +416,34 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
     # saving/loading
-    parser.add_argument('--ckpt_path', type=str, default='/mnt/fast/nobackup/scratch4weeks/pw00391/ckpt',
+    parser.add_argument('--ckpt_path', type=str, default='/vol/research/VS-Work/PW00391/icassp/ckpt',
                         help='path to save the checkpoint')
     parser.add_argument('--ckpt_name', type=str, default=None,
                         help='name of the checkpoint to load')
-    parser.add_argument('--log_path', type=str, default='/mnt/fast/nobackup/scratch4weeks/pw00391/wandb_log',
+    parser.add_argument('--log_path', type=str, default='/vol/research/VS-Work/PW00391/icassp/log',
                         help='path to save the log')
-    parser.add_argument('--path_images', type=str, default='/mnt/fast/nobackup/scratch4weeks/pw00391/Task2/L3DAS23_Task2_images',
+    parser.add_argument('--path_images', type=str, default='/vol/research/VS-Work/PW00391/L3DAS23/L3DAS23_Task2_images',
                         help="Path to the folder containing all images of Task2. None when using the audio-only version")    
-    parser.add_argument('--path_csv_images_train', type=str, default='/mnt/fast/nobackup/scratch4weeks/pw00391/Task2/L3DAS23_Task2_train/audio_image.csv',
+    parser.add_argument('--path_csv_images_train', type=str, default='/vol/research/VS-Work/PW00391/L3DAS23/L3DAS23_Task2_train/audio_image.csv',
                         help="Path to the CSV file for the couples (name_audio, name_photo) in the train/val set")
-    parser.add_argument('--path_csv_images_test', type=str, default='/mnt/fast/nobackup/scratch4weeks/pw00391/Task2/L3DAS23_Task2_dev/audio_image.csv',
+    parser.add_argument('--path_csv_images_test', type=str, default='/vol/research/VS-Work/PW00391/L3DAS23/L3DAS23_Task2_dev/audio_image.csv',
                         help="Path to the CSV file for the couples (name_audio, name_photo) in the test set")
     
     # dataset parameters
-    parser.add_argument('--training_predictors_path', type=str, default='/mnt/fast/nobackup/scratch4weeks/pw00391/Output/processed/task2_predictors_train.pkl')
-    parser.add_argument('--training_target_path', type=str, default='/mnt/fast/nobackup/scratch4weeks/pw00391/Output/processed/task2_target_train.pkl')
-    parser.add_argument('--validation_predictors_path', type=str, default='/mnt/fast/nobackup/scratch4weeks/pw00391/Output/processed/task2_predictors_validation.pkl')
-    parser.add_argument('--validation_target_path', type=str, default='/mnt/fast/nobackup/scratch4weeks/pw00391/Output/processed/task2_target_validation.pkl')
-    parser.add_argument('--test_predictors_path', type=str, default='/mnt/fast/nobackup/scratch4weeks/pw00391/Output/processed/task2_predictors_test.pkl')
-    parser.add_argument('--test_target_path', type=str, default='/mnt/fast/nobackup/scratch4weeks/pw00391/Output/processed/task2_target_test.pkl')
+    parser.add_argument('--training_predictors_path', type=str, default='/vol/research/VS-Work/PW00391/L3DAS23/Output/processed/task2_predictors_train.pkl')
+    parser.add_argument('--training_target_path', type=str, default='/vol/research/VS-Work/PW00391/L3DAS23/Output/processed/task2_target_train.pkl')
+    parser.add_argument('--validation_predictors_path', type=str, default='/vol/research/VS-Work/PW00391/L3DAS23/Output/processed/task2_predictors_validation.pkl')
+    parser.add_argument('--validation_target_path', type=str, default='/vol/research/VS-Work/PW00391/L3DAS23/Output/processed/task2_target_validation.pkl')
+    parser.add_argument('--test_predictors_path', type=str, default='/vol/research/VS-Work/PW00391/L3DAS23/Output/processed/task2_predictors_test.pkl')
+    parser.add_argument('--test_target_path', type=str, default='/vol/research/VS-Work/PW00391/L3DAS23/Output/processed/task2_target_test.pkl')
 
     # training parameters
     parser.add_argument('--batch_size', type=int, default=16)
     parser.add_argument('--lr', type=float, default=0.00001)
     parser.add_argument('--warmup_epochs', type=int, default=10)
-    parser.add_argument('--min_epochs', type=int, default=50)
+    parser.add_argument('--min_epochs', type=int, default=20)
     parser.add_argument('--max_epochs', type=int, default=100)
-    parser.add_argument('--num_workers', type=int, default=4)
+    parser.add_argument('--num_workers', type=int, default=8)
     parser.add_argument('--patience', type=int, default=5)
 
     # model parameters
@@ -468,10 +477,11 @@ if __name__ == '__main__':
     
     # debug and test
     args.audio_visual = False #True if args.path_images else False
-    args.max_epochs = 10
-    args.min_epochs = 5
-    args.validation_audio_predictors = args.training_audio_predictors
-    args.validation_audio_target = args.training_audio_target
+    # args.max_epochs = 1
+    # args.min_epochs = 1
+    args.validation_audio_predictors = args.training_predictors_path
+    args.validation_audio_target = args.training_target_path
+    args.lr = 0.001 # 0.04 AV
 
     main(args)
     # data_module = create_data(args)
