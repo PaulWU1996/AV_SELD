@@ -2,7 +2,11 @@ from typing import Any, List
 import sys
 
 from models.CMConformer import AV_SELD
+<<<<<<< HEAD
 from custom_dataset import CustomAudioVisualDataset, convert, AudioVisualDataset
+=======
+from custom_dataset import CustomAudioVisualDataset, convert
+>>>>>>> 4dbaa05a192a5b25c78534a752e2adee34c82d22
 from metrics import location_sensitive_detection
 from utility_functions import gen_submission_list_task2
 
@@ -283,7 +287,11 @@ class Model(pl.LightningModule):
         val_loss, sed_loss, doa_loss = seld_loss(sed, doa, target, self.criterion_sed, self.criterion_doa, output_classes=14, class_overlaps=3)
 
         # sed = self.model(audio)
+<<<<<<< HEAD
         # val_loss = seld_loss(sed, torch.zeros((sed.shape[0],10,126),device=sed.device), target, self.criterion_sed, self.criterion_doa, output_classes=14, class_overlaps=3)
+=======
+        val_loss = seld_loss(sed, torch.zeros((sed.shape[0],10,126),device=sed.device), target, self.criterion_sed, self.criterion_doa, output_classes=14, class_overlaps=3)
+>>>>>>> 4dbaa05a192a5b25c78534a752e2adee34c82d22
 
 
 
@@ -411,9 +419,14 @@ def main(args):
                     deterministic=True,
                     enable_checkpointing=True, 
                     callbacks=[earlyStopping, checkpoint_callback],
+<<<<<<< HEAD
                     val_check_interval=0.6,
                     # auto_lr_find=True, 
                     # logger= wandb_logger
+=======
+                    # auto_lr_find=True, 
+                    logger=wandb_logger
+>>>>>>> 4dbaa05a192a5b25c78534a752e2adee34c82d22
                     )
 
     # import lightning as L
@@ -493,11 +506,19 @@ if __name__ == '__main__':
     
     # debug and test
     args.audio_visual = False #True if args.path_images else False
+<<<<<<< HEAD
     args.max_epochs = 3
     args.min_epochs = 1
     args.validation_predictors_path = args.training_predictors_path
     args.validation_target_path = args.training_target_path
     args.lr = 1e-4 # 0.04 AV
+=======
+    # args.max_epochs = 1
+    # args.min_epochs = 1
+    args.validation_audio_predictors = args.training_predictors_path
+    args.validation_audio_target = args.training_target_path
+    args.lr = 0.001 # 0.04 AV
+>>>>>>> 4dbaa05a192a5b25c78534a752e2adee34c82d22
 
     main(args)
     # data_module = create_data(args)
